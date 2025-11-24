@@ -104,13 +104,13 @@ export class Board {
     for (let r=0;r<this.rows;r++) this.grid[r] = new Array(this.cols).fill(null);
     this.layout();
     for (let r=0;r<this.rows;r++) for (let c=0;c<this.cols;c++) { const p = this.spawnRandom(r,c,true); this.place(r,c,p,false); }
+    await this.ensureInitialClean();
     
     this.container.on('pointerdown', this.onDown.bind(this));
     this.container.on('pointertap', this.onDown.bind(this));
     this.container.on('pointerup', this.onUp.bind(this));
     this.container.on('pointerupoutside', this.onUp.bind(this));
     this.container.on('pointermove', this.onMove.bind(this));
-    await this.resolveMatches(true);
   }
   posToRC(x: number, y: number) { const cx = x - this.container.x, cy = y - this.container.y; const c = Math.floor(cx/this.tile), r = Math.floor(cy/this.tile); if (r<0||c<0||r>=this.rows||c>=this.cols) return null; return { r, c }; }
   rcToPos(r: number, c: number) { return { x: c*this.tile + this.tile/2, y: r*this.tile + this.tile/2 }; }
@@ -173,6 +173,36 @@ export class Board {
       this.affectFixedAdjacency(g);
     }
     await this.dropAndFill(); if (!initial) await this.resolveMatches(false); return true;
+  }
+  private pickColorAvoid(r:number,c:number): Color {
+    const nbs = [[1,0],[-1,0],[0,1],[0,-1]] as const;
+    const scores = Colors.map(color => {
+      let cnt = 0;
+      for (const d of nbs) { const nr = r+d[0], nc = c+d[1]; if (nr<0||nc<0||nr>=this.rows||nc>=this.cols) continue; const p = this.grid[nr][nc]; if (p && p.kind==='normal' && p.color===color) cnt++; }
+      return { color, cnt };
+    }).sort((a,b)=>a.cnt-b.cnt);
+    const best = scores.filter(it => it.cnt<2);
+    const list = best.length ? best : scores;
+    const idx = Math.floor(Math.random()*list.length);
+    return list[idx].color;
+  }
+  private async ensureInitialClean() {
+    let tries = 0;
+    while (tries<24) {
+      const groups = this.groups();
+      if (groups.length===0) break;
+      for (const g of groups) {
+        for (const it of g) {
+          const r = it.r, c = it.c;
+          const color = this.pickColorAvoid(r,c);
+          this.removeAt(r,c);
+          const p: Piece = { kind:'normal', color, falls:true } as any;
+          this.place(r,c,p,false);
+        }
+      }
+      tries++;
+      await new Promise(r=>setTimeout(r,0));
+    }
   }
   destroyPieceAt(r: number, c: number, big: boolean) { const p = this.grid[r][c]; if (!p) return; if (p.kind==='special' && p.special==='inert') return; if (p.kind==='special' && p.special==='fixed' && !(p as any).kill) return; if (p.kind==='special' && p.special==='armored') { p.hp = (p.hp||1) - 1; p.sprite && (p.sprite.tint = 0x999999); if ((p.hp||0) > 0) return; }
     const pos = this.rcToPos(r,c); const x = this.container.x+pos.x, y = this.container.y+pos.y; const color = this.fxColor(p); this.pulse(x,y,big?this.tile*0.9:this.tile*0.7, EXPLOSION_TIME_MS); this.particles.ringShockwave(x, y, color, this.tile*0.45, EXPLOSION_TIME_MS); this.particles.sparkBurst(x, y, color, big?22:14, big?7:5); this.particles.burst(x, y, color, big?48:24, big?10:6); this.sound.explode({ x, y }); this.shake(big?8:4, (big?200:120)*SPEED); this.removeAt(r,c);

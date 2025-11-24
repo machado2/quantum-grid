@@ -20,6 +20,9 @@ let board: Board | null = null;
 let score = 0;
 const scoreEl = document.getElementById('score')!;
 const scoreLabelEl = document.getElementById('score-label')!;
+const soundToggleEl = document.getElementById('sound-toggle')! as HTMLButtonElement;
+soundToggleEl.textContent = '🔇';
+soundToggleEl.setAttribute('aria-label', 'Som desligado');
 
 const i18n: Record<string, Record<string,string>> = {
   en: { score: 'Score' },
@@ -82,3 +85,8 @@ document.addEventListener('visibilitychange', scheduleRelayout);
 document.addEventListener('fullscreenchange', scheduleRelayout);
 
 boot();
+soundToggleEl.addEventListener('click', () => {
+  const on = sound.enabled;
+  if (!on) { sound.enable(); soundToggleEl.textContent = '🔊'; soundToggleEl.setAttribute('aria-pressed', 'true'); soundToggleEl.setAttribute('aria-label', 'Som ligado'); }
+  else { sound.disable(); soundToggleEl.textContent = '🔇'; soundToggleEl.setAttribute('aria-pressed', 'false'); soundToggleEl.setAttribute('aria-label', 'Som desligado'); }
+});
