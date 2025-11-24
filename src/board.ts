@@ -1,5 +1,4 @@
 import { Application, Container, Graphics, Sprite, Rectangle, BLEND_MODES, FederatedEvent, IPointData } from 'pixi.js';
-import { createBlackAlphaFilter } from './filters';
 import { textures } from './assets';
 import { Particles } from './particles';
 import { Sound } from './sound';
@@ -18,7 +17,7 @@ const SpecialTex: Record<Special, string> = {
 
 function randChoice<T>(a: T[]): T { return a[Math.floor(Math.random() * a.length)]; }
 function easeOutCubic(t: number) { return 1 - Math.pow(1 - t, 3); }
-const SPEED = 3;
+const SPEED = 1.5;
 const EXPLOSION_TIME_MS = 1000;
 function tweenScale(s: Sprite, to: number, time: number, onEnd?: () => void) {
   const from = s.scale.x;
@@ -113,7 +112,7 @@ export class Board {
   spriteForPiece(p: Piece) {
     const s = new Sprite(this.texForPiece(p)); s.anchor.set(0.5);
     const mw = this.tile*0.9, mh = this.tile*0.9; const fit = Math.min(mw/s.texture.width, mh/s.texture.height); p.baseScale = fit; s.scale.set(fit);
-    s.filters = [createBlackAlphaFilter(0.8)];
+    s.filters = [];
     s.zIndex = 1; s.cursor = 'pointer'; return s;
   }
   place(r: number, c: number, p: Piece, animate: boolean) {
