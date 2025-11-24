@@ -1,0 +1,22 @@
+# Node/Vite
+node_modules/
+dist/
+.vite/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Env
+.env
+.env.*
+
+# Coverage
+coverage/
+
