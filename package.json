@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "gen:favicon": "node tools/gen-favicon.js",
-    "deploy": "bash deploy/deploy.sh"
+    "deploy": "node deploy/deploy.js"
   },
   "dependencies": {
     "pixi.js": "^7.4.2"
