@@ -17,26 +17,29 @@ const SpecialTex: Record<Special, string> = {
 
 function randChoice<T>(a: T[]): T { return a[Math.floor(Math.random() * a.length)]; }
 function easeOutCubic(t: number) { return 1 - Math.pow(1 - t, 3); }
-const SPEED = 1.5;
-const EXPLOSION_TIME_MS = 1000;
+const SPEED = 0.5;
+const EXPLOSION_TIME_MS = 600;
 function tweenScale(s: Sprite, to: number, time: number, onEnd?: () => void) {
-  const from = s.scale.x;
+  const from = (s && (s as any).scale && (s as any).scale.x) ?? 1;
   const start = performance.now();
   const tick = () => {
+    if (!s || (s as any).destroyed || !(s as any).scale) return;
     const p = Math.min(1, (performance.now() - start) / (time * SPEED));
     const v = from + (to - from) * easeOutCubic(p);
-    s.scale.set(v);
+    try { (s as any).scale.set(v); } catch { return; }
     if (p < 1) requestAnimationFrame(tick); else onEnd && onEnd();
-  }; tick();
+  }; requestAnimationFrame(tick);
 }
 function tween(obj: any, prop: string, to: number, time: number, onEnd?: () => void) {
-  const from = obj[prop];
+  const from = (obj && prop in obj) ? obj[prop] : 0;
   const start = performance.now();
   const tick = () => {
+    if (!obj || (obj as any).destroyed) return;
     const p = Math.min(1, (performance.now() - start) / (time * SPEED));
-    obj[prop] = from + (to - from) * easeOutCubic(p);
+    const val = from + (to - from) * easeOutCubic(p);
+    try { obj[prop] = val; } catch { return; }
     if (p < 1) requestAnimationFrame(tick); else onEnd && onEnd();
-  }; tick();
+  }; requestAnimationFrame(tick);
 }
 
 export class Board {
@@ -63,6 +66,8 @@ export class Board {
   dragTarget: { r: number, c: number } | null = null;
   origin = { x: 0, y: 0 };
   pad = 16;
+  highlightPulse = false;
+  highlightTimer: number | null = null;
 
   constructor({ app, scene, particles, sound, addScore, shake }: { app: Application, scene: Container, particles: Particles, sound: Sound, addScore: (v:number)=>void, shake: (i:number,t:number)=>void }) {
     this.app = app; this.scene = scene; this.particles = particles; this.sound = sound; this.addScore = addScore; this.shake = shake;
@@ -94,11 +99,12 @@ export class Board {
       }
     }
   }
+  fxColor(p: Piece) { if (p.kind==='normal') return ColorHex[p.color]; if (p.kind==='special' && p.color) return ColorHex[p.color]; return 0x39e4ff; }
   async init() {
     for (let r=0;r<this.rows;r++) this.grid[r] = new Array(this.cols).fill(null);
     this.layout();
     for (let r=0;r<this.rows;r++) for (let c=0;c<this.cols;c++) { const p = this.spawnRandom(r,c,true); this.place(r,c,p,false); }
-    this.container.interactive = true;
+    
     this.container.on('pointerdown', this.onDown.bind(this));
     this.container.on('pointertap', this.onDown.bind(this));
     this.container.on('pointerup', this.onUp.bind(this));
@@ -117,7 +123,7 @@ export class Board {
   }
   place(r: number, c: number, p: Piece, animate: boolean) {
     const pos = this.rcToPos(r,c); const s = this.spriteForPiece(p); s.position.set(pos.x, pos.y); this.container.addChild(s); p.sprite = s; this.grid[r][c] = p;
-    if (animate) { s.alpha = 0; tween(s,'alpha',1,260); this.sound.drop(); const color = (p.kind==='normal') ? ColorHex[p.color] : 0x39e4ff; this.particles.burst(this.container.x+pos.x, this.container.y+pos.y, color, 12, 3); }
+    if (animate) { s.alpha = 0; tween(s,'alpha',1,260); const wx = this.container.x+pos.x, wy = this.container.y+pos.y; this.sound.drop({ x: wx, y: wy }); const color = this.fxColor(p); this.particles.burst(wx, wy, color, 14, 3.5); this.particles.sparkBurst(wx, wy, color, 10, 4); }
   }
   removeAt(r: number, c: number) { const p = this.grid[r][c]; if (!p) return; const s = p.sprite; if (s) { this.container.removeChild(s); s.destroy(); } this.grid[r][c] = null; }
   spawnRandom(r: number, c: number, initial: boolean): Piece {
@@ -135,20 +141,20 @@ export class Board {
     const color = randChoice(Colors); return { kind: 'normal', color, falls: true };
   }
   onDown(e: FederatedEvent) { if (this.busy) return; const p = (e as any).data.global as IPointData; const rc = this.posToRC(p.x,p.y); if (!rc) return; const cur = this.grid[rc.r][rc.c]; if (!cur) return; const bs = cur.baseScale || 1;
-    if (!this.selectedA) { this.selectedA = rc; this.selected = rc; cur.sprite!.scale.set(bs*1.05); this.drawHighlight(rc); this.dragging = true; this.dragTarget = null; return; }
+    if (!this.selectedA) { this.selectedA = rc; this.selected = rc; cur.sprite!.scale.set(bs*1.05); this.drawHighlight(rc); this.startHighlightPulse(); this.dragging = true; this.dragTarget = null; const pos = this.rcToPos(rc.r,rc.c); this.sound.select({ x: this.container.x+pos.x, y: this.container.y+pos.y }); return; }
     const prev = this.grid[this.selectedA.r][this.selectedA.c]; const adj = (rc.r===this.selectedA.r && Math.abs(rc.c-this.selectedA.c)===1) || (rc.c===this.selectedA.c && Math.abs(rc.r-this.selectedA.r)===1);
     if (adj) { if (prev?.sprite) prev.sprite.scale.set((prev.baseScale||1)); this.trySwap(this.selectedA, rc); this.selectedA = null; this.selected = null; this.clearHighlight(); this.dragging=false; this.dragTarget=null; return; }
-    if (prev?.sprite) prev.sprite.scale.set((prev.baseScale||1)); this.selectedA = rc; this.selected = rc; cur.sprite!.scale.set(bs*1.05); this.drawHighlight(rc); this.dragging = true; this.dragTarget = null;
+    if (prev?.sprite) prev.sprite.scale.set((prev.baseScale||1)); this.selectedA = rc; this.selected = rc; cur.sprite!.scale.set(bs*1.05); this.drawHighlight(rc); this.startHighlightPulse(); this.dragging = true; this.dragTarget = null;
   }
   onMove(e: FederatedEvent) { if (!this.selectedA || this.busy || !this.dragging) return; const p = (e as any).data.global as IPointData; const rc = this.posToRC(p.x,p.y); if (!rc) { this.dragTarget = null; return; }
-    const a = this.selectedA; const adj = (rc.r===a.r && Math.abs(rc.c-a.c)===1) || (rc.c===a.c && Math.abs(rc.r-a.r)===1); this.dragTarget = adj ? rc : null;
+    const a = this.selectedA; const prev = this.dragTarget; const adj = (rc.r===a.r && Math.abs(rc.c-a.c)===1) || (rc.c===a.c && Math.abs(rc.r-a.r)===1); const next = adj ? rc : null; this.dragTarget = next; if (!prev && next) { const pos = this.rcToPos(next.r,next.c); this.sound.hover({ x: this.container.x+pos.x, y: this.container.y+pos.y }); }
   }
   onUp() { if (this.busy) return; if (!this.selected && !this.selectedA) return; if (this.dragging && this.dragTarget && this.selectedA) { const prev = this.grid[this.selectedA.r][this.selectedA.c]; if (prev?.sprite) prev.sprite.scale.set((prev.baseScale||1)); this.trySwap(this.selectedA, this.dragTarget); this.selectedA = null; this.clearHighlight(); }
     else if (this.selected) { const cur = this.grid[this.selected.r][this.selected.c]; if (cur?.sprite) cur.sprite.scale.set((cur.baseScale||1)); if (!this.selectedA) this.clearHighlight(); }
     this.selected = null; this.dragging=false; this.dragTarget=null; }
-  swapCells(a: {r:number,c:number}, b: {r:number,c:number}) { const pa = this.grid[a.r][a.c]; const pb = this.grid[b.r][b.c]; if (!pa || !pb || !pa.sprite || !pb.sprite) return; this.grid[a.r][a.c] = pb; this.grid[b.r][b.c] = pa; const posa = this.rcToPos(a.r,a.c), posb = this.rcToPos(b.r,b.c); const saSprite = pa.sprite as Sprite; const sbSprite = pb.sprite as Sprite; tween(saSprite,'x',posb.x,240); tween(saSprite,'y',posb.y,240); tween(sbSprite,'x',posa.x,240); tween(sbSprite,'y',posa.y,240); const sa = pa.baseScale||1; const sb = pb.baseScale||1; tweenScale(saSprite, sa*1.08, 200, () => tweenScale(saSprite, sa, 200)); tweenScale(sbSprite, sb*1.08, 200, () => tweenScale(sbSprite, sb, 200)); }
-  async trySwap(a: {r:number,c:number}, b: {r:number,c:number}) { if (this.busy) return; this.busy=true; await this.sound.swap(); this.swapCells(a,b); await new Promise(r=>setTimeout(r,240*SPEED)); const groups = this.groups(); const involves = groups.some(g => g.some(it => (it.r===a.r && it.c===a.c) || (it.r===b.r && it.c===b.c)));
-    if (involves) await this.resolveMatches(false); else if (!this.allowFreeSwap) { this.swapCells(a,b); await new Promise(r=>setTimeout(r,220*SPEED)); this.invalidSwapFlash(a,b); }
+  swapCells(a: {r:number,c:number}, b: {r:number,c:number}) { const pa = this.grid[a.r][a.c]; const pb = this.grid[b.r][b.c]; if (!pa || !pb || !pa.sprite || !pb.sprite) return; this.grid[a.r][a.c] = pb; this.grid[b.r][b.c] = pa; const posa = this.rcToPos(a.r,a.c), posb = this.rcToPos(b.r,b.c); const saSprite = pa.sprite as Sprite; const sbSprite = pb.sprite as Sprite; tween(saSprite,'x',posb.x,180); tween(saSprite,'y',posb.y,180); tween(sbSprite,'x',posa.x,180); tween(sbSprite,'y',posa.y,180); const sa = pa.baseScale||1; const sb = pb.baseScale||1; tweenScale(saSprite, sa*1.08, 160, () => tweenScale(saSprite, sa, 160)); tweenScale(sbSprite, sb*1.08, 160, () => tweenScale(sbSprite, sb, 160)); }
+  async trySwap(a: {r:number,c:number}, b: {r:number,c:number}) { if (this.busy) return; this.busy=true; const posa = this.rcToPos(a.r,a.c), posb = this.rcToPos(b.r,b.c); const mx = this.container.x + (posa.x + posb.x)/2, my = this.container.y + (posa.y + posb.y)/2; await this.sound.swap({ x: mx, y: my }); this.sound.swoosh({ x: mx, y: my }); this.swapCells(a,b); const wa = { x: this.container.x+posa.x, y: this.container.y+posa.y }; const wb = { x: this.container.x+posb.x, y: this.container.y+posb.y }; this.particles.trail(wa.x, wa.y, wb.x, wb.y, 0x39e4ff, 24); this.particles.sparkBurst(wb.x, wb.y, 0x39e4ff, 12, 5); await new Promise(r=>setTimeout(r,180*SPEED)); const groups = this.groups(); const involves = groups.some(g => g.some(it => (it.r===a.r && it.c===a.c) || (it.r===b.r && it.c===b.c)));
+    if (involves) await this.resolveMatches(false); else if (!this.allowFreeSwap) { this.swapCells(a,b); await new Promise(r=>setTimeout(r,220*SPEED)); this.invalidSwapFlash(a,b); this.sound.invalid({ x: mx, y: my }); }
     this.busy=false; this.selected=null; }
   groups() {
     const groups: { r:number,c:number,p:Piece }[] [] = [] as any;
@@ -163,23 +169,25 @@ export class Board {
   }
   async resolveMatches(initial: boolean) { const groups = this.groups(); if (groups.length===0) return false; for (const g of groups) { let factor = 1; const rowExploders: {r:number,c:number,p:Piece}[] = []; const colExploders: {r:number,c:number,p:Piece}[] = []; const areaExploders: {r:number,c:number,p:Piece}[] = [];
       for (const it of g) { const p = it.p; if (p.kind==='special') { if (p.special==='multiplier') factor *= p.value || 2; if (p.special==='row') rowExploders.push(it); if (p.special==='col') colExploders.push(it); if (p.special==='nova') areaExploders.push(it); } }
-      const base = g.length*10; const sc = Math.floor(base*factor); this.addScore(sc); await this.sound.match(); for (const it of g) this.destroyPieceAt(it.r,it.c, sc>=40); for (const it of rowExploders) await this.explodeRow(it.r); for (const it of colExploders) await this.explodeCol(it.c); for (const it of areaExploders) await this.explodeArea(it.r,it.c); await new Promise(r=>setTimeout(r,EXPLOSION_TIME_MS*SPEED));
+      const base = g.length*10; const sc = Math.floor(base*factor); this.addScore(sc); this.sound.score(); await this.sound.match(); if (sc>=40) { this.sound.big(); this.screenFlash(0x39e4ff, 0.35, EXPLOSION_TIME_MS); } for (const it of g) this.destroyPieceAt(it.r,it.c, sc>=40); for (const it of rowExploders) await this.explodeRow(it.r, this.fxColor(it.p)); for (const it of colExploders) await this.explodeCol(it.c, this.fxColor(it.p)); for (const it of areaExploders) await this.explodeArea(it.r,it.c, this.fxColor(it.p)); await new Promise(r=>setTimeout(r,EXPLOSION_TIME_MS*SPEED));
       this.affectFixedAdjacency(g);
     }
     await this.dropAndFill(); if (!initial) await this.resolveMatches(false); return true;
   }
   destroyPieceAt(r: number, c: number, big: boolean) { const p = this.grid[r][c]; if (!p) return; if (p.kind==='special' && p.special==='inert') return; if (p.kind==='special' && p.special==='fixed' && !(p as any).kill) return; if (p.kind==='special' && p.special==='armored') { p.hp = (p.hp||1) - 1; p.sprite && (p.sprite.tint = 0x999999); if ((p.hp||0) > 0) return; }
-    const pos = this.rcToPos(r,c); const x = this.container.x+pos.x, y = this.container.y+pos.y; this.pulse(x,y,big?this.tile*0.9:this.tile*0.7, EXPLOSION_TIME_MS); this.particles.burst(x, y, 0x39e4ff, big?48:24, big?10:6); this.sound.explode(); this.shake(big?8:4, (big?200:120)*SPEED); this.removeAt(r,c);
+    const pos = this.rcToPos(r,c); const x = this.container.x+pos.x, y = this.container.y+pos.y; const color = this.fxColor(p); this.pulse(x,y,big?this.tile*0.9:this.tile*0.7, EXPLOSION_TIME_MS); this.particles.ringShockwave(x, y, color, this.tile*0.45, EXPLOSION_TIME_MS); this.particles.sparkBurst(x, y, color, big?22:14, big?7:5); this.particles.burst(x, y, color, big?48:24, big?10:6); this.sound.explode({ x, y }); this.shake(big?8:4, (big?200:120)*SPEED); this.removeAt(r,c);
   }
-  laser(x1:number,y1:number,x2:number,y2:number) { const g = new Graphics(); g.blendMode = BLEND_MODES.ADD; g.lineStyle(6,0x39e4ff,0.9); g.moveTo(x1,y1); g.lineTo(x2,y2); g.alpha=1; this.fx.addChild(g); tween(g,'alpha',0,EXPLOSION_TIME_MS,()=>{ this.fx.removeChild(g); g.destroy(); }); }
+  laser(x1:number,y1:number,x2:number,y2:number,color:number) { const g = new Graphics(); g.blendMode = BLEND_MODES.ADD; g.lineStyle(6,color,0.9); g.moveTo(x1,y1); g.lineTo(x2,y2); g.alpha=1; this.fx.addChild(g); tween(g,'alpha',0,EXPLOSION_TIME_MS,()=>{ this.fx.removeChild(g); g.destroy(); }); }
   pulse(x:number,y:number, size:number, time:number) { const g = new Graphics(); g.blendMode = BLEND_MODES.ADD; g.beginFill(0x39e4ff, 0.7); g.drawCircle(0,0, size*0.35); g.endFill(); g.x=x; g.y=y; g.scale.set(0.9); this.fx.addChild(g); tweenScale(g as any, 1.4, time, () => { this.fx.removeChild(g); g.destroy(); }); tween(g,'alpha',0,time); }
   drawTiles() { this.tiles.clear(); for (let r=0;r<this.rows;r++) for (let c=0;c<this.cols;c++) { const x = c*this.tile, y = r*this.tile; this.tiles.lineStyle(2, 0x4fb8ff, 0.7); this.tiles.beginFill(0x1b2a38, 0.35); this.tiles.drawRoundedRect(x+4, y+4, this.tile-8, this.tile-8, 12); this.tiles.endFill(); } }
   drawHighlight(rc: { r:number, c:number }) { this.highlight.clear(); this.highlight.lineStyle(3, 0x39e4ff, 0.8); const x = rc.c*this.tile, y = rc.r*this.tile; this.highlight.drawRoundedRect(x, y, this.tile, this.tile, 12); }
-  clearHighlight() { this.highlight.clear(); }
+  clearHighlight() { this.highlightPulse = false; if (this.highlightTimer!==null) { window.clearTimeout(this.highlightTimer); this.highlightTimer = null; } this.highlight.alpha = 0.8; this.highlight.clear(); }
+  startHighlightPulse() { if (this.highlightTimer!==null) return; this.highlightPulse = true; const run = () => { if (!this.highlightPulse) { this.highlightTimer=null; return; } const a = this.highlight.alpha || 0.8; const target = a>0.6 ? 0.3 : 0.8; tween(this.highlight,'alpha',target,280, () => { this.highlightTimer = window.setTimeout(run, 0); }); }; run(); }
+  screenFlash(color:number, alpha:number, time:number) { const g = new Graphics(); g.blendMode = BLEND_MODES.ADD; g.beginFill(color, alpha); g.drawRect(0,0,this.app.renderer.width,this.app.renderer.height); g.endFill(); g.x=0; g.y=0; this.fx.addChild(g); tween(g,'alpha',0,time,()=>{ this.fx.removeChild(g); g.destroy(); }); }
   invalidSwapFlash(a: {r:number,c:number}, b: {r:number,c:number}) { const s1 = this.grid[a.r][a.c]?.sprite; const s2 = this.grid[b.r][b.c]?.sprite; if (!s1 || !s2) return; const flash = (s: Sprite) => { const start = s.alpha; tween(s, 'alpha', 0.4, 140, () => tween(s, 'alpha', start, 140)); }; flash(s1); flash(s2); }
-  async explodeRow(r:number) { const y = this.container.y + this.rcToPos(r,0).y; const x1 = this.container.x + this.rcToPos(r,0).x - this.tile/2; const x2 = this.container.x + this.rcToPos(r,this.cols-1).x + this.tile/2; this.laser(x1,y,x2,y); for (let c=0;c<this.cols;c++) this.destroyPieceAt(r,c,true); await new Promise(r => setTimeout(r,EXPLOSION_TIME_MS*SPEED)); }
-  async explodeCol(c:number) { const x = this.container.x + this.rcToPos(0,c).x; const y1 = this.container.y + this.rcToPos(0,c).y - this.tile/2; const y2 = this.container.y + this.rcToPos(this.rows-1,c).y + this.tile/2; this.laser(x,y1,x,y2); for (let r=0;r<this.rows;r++) this.destroyPieceAt(r,c,true); await new Promise(r => setTimeout(r,EXPLOSION_TIME_MS*SPEED)); }
-  async explodeArea(r0:number,c0:number) { const p = this.rcToPos(r0,c0); this.particles.burst(this.container.x+p.x, this.container.y+p.y, 0xff33aa, 48, 14); for (let r=r0-1;r<=r0+1;r++) for (let c=c0-1;c<=c0+1;c++) { if (r<0||c<0||r>=this.rows||c>=this.cols) continue; this.destroyPieceAt(r,c,true); } await new Promise(r=>setTimeout(r,EXPLOSION_TIME_MS*SPEED)); }
+  async explodeRow(r:number, color:number) { const y = this.container.y + this.rcToPos(r,0).y; const x1 = this.container.x + this.rcToPos(r,0).x - this.tile/2; const x2 = this.container.x + this.rcToPos(r,this.cols-1).x + this.tile/2; this.laser(x1,y,x2,y,color); this.sound.laser({ x: (x1+x2)/2, y }); for (let c=0;c<this.cols;c++) this.destroyPieceAt(r,c,true); await new Promise(r => setTimeout(r,EXPLOSION_TIME_MS*SPEED)); }
+  async explodeCol(c:number, color:number) { const x = this.container.x + this.rcToPos(0,c).x; const y1 = this.container.y + this.rcToPos(0,c).y - this.tile/2; const y2 = this.container.y + this.rcToPos(this.rows-1,c).y + this.tile/2; this.laser(x,y1,x,y2,color); this.sound.laser({ x, y: (y1+y2)/2 }); for (let r=0;r<this.rows;r++) this.destroyPieceAt(r,c,true); await new Promise(r => setTimeout(r,EXPLOSION_TIME_MS*SPEED)); }
+  async explodeArea(r0:number,c0:number,color:number) { const p = this.rcToPos(r0,c0); this.particles.burst(this.container.x+p.x, this.container.y+p.y, color, 48, 14); for (let r=r0-1;r<=r0+1;r++) for (let c=c0-1;c<=c0+1;c++) { if (r<0||c<0||r>=this.rows||c>=this.cols) continue; this.destroyPieceAt(r,c,true); } await new Promise(r=>setTimeout(r,EXPLOSION_TIME_MS*SPEED)); }
   affectFixedAdjacency(group: {r:number,c:number,p:Piece}[]) { const adj = new Set<string>(); for (const it of group) { const dirs = [[1,0],[-1,0],[0,1],[0,-1]] as const; for (const d of dirs) { const r = it.r + d[0], c = it.c + d[1]; if (r<0||c<0||r>=this.rows||c>=this.cols) continue; const p = this.grid[r][c]; if (p && p.kind==='special' && p.special==='fixed') adj.add(r+','+c); } } for (const id of adj) { const [r,c] = id.split(',').map(Number); const p = this.grid[r][c] as any; p.hp = (p.hp||1) - 1; if (p.sprite) p.sprite.alpha = 0.6 + Math.random()*0.2; if ((p.hp||0) <= 0) { p.kill = true; this.destroyPieceAt(r,c,true); } } }
-  async dropAndFill() { for (let c=0;c<this.cols;c++) { let write = this.rows-1; for (let r=this.rows-1;r>=0;r--) { const p = this.grid[r][c]; if (p) { if (write!==r) { this.grid[write][c] = p; this.grid[r][c] = null; const pos = this.rcToPos(write,c); const s = p.sprite!; tween(s,'x',pos.x,520); tween(s,'y',pos.y,520); } write--; } } for (let r=write;r>=0;r--) { const p = this.spawnRandom(r,c,false); this.place(r,c,p,true); } } await new Promise(r=>setTimeout(r,650*SPEED)); }
+  async dropAndFill() { for (let c=0;c<this.cols;c++) { let write = this.rows-1; for (let r=this.rows-1;r>=0;r--) { const p = this.grid[r][c]; if (p) { if (write!==r) { this.grid[write][c] = p; this.grid[r][c] = null; const pos = this.rcToPos(write,c); const s = p.sprite!; tween(s,'x',pos.x,360); tween(s,'y',pos.y,360); } write--; } } for (let r=write;r>=0;r--) { const p = this.spawnRandom(r,c,false); this.place(r,c,p,true); } } await new Promise(r=>setTimeout(r,420*SPEED)); }
 }

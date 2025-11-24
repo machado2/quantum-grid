@@ -7,12 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "gen:favicon": "node tools/gen-favicon.js"
   },
   "dependencies": {
     "pixi.js": "^7.4.2"
   },
   "devDependencies": {
+    "sharp": "^0.34.5",
     "typescript": "^5.6.3",
     "vite": "^5.1.6"
   }

@@ -1,56 +1,65 @@
 export class Sound {
   private ctx: AudioContext | null = null;
-  private buffers: Record<string, AudioBuffer | null> = {};
+  private masterGain: GainNode | null = null;
+  private compressor: DynamicsCompressorNode | null = null;
   enabled = true;
   constructor() {
-    window.addEventListener('pointerdown', () => {
+    const unlock = async () => {
       if (!this.ctx) this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }, { once: true });
+      if (this.ctx && !this.masterGain) {
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.value = 0.9;
+        this.compressor = this.ctx.createDynamicsCompressor();
+        this.compressor.threshold.value = -18;
+        this.compressor.knee.value = 20;
+        this.compressor.ratio.value = 3;
+        this.compressor.attack.value = 0.003;
+        this.compressor.release.value = 0.25;
+        this.masterGain.connect(this.compressor).connect(this.ctx.destination);
+      }
+      try { await this.ctx?.resume(); } catch {}
+    };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('click', unlock, { once: true });
   }
   private ensureCtx(): AudioContext | null { return this.ctx && this.enabled ? this.ctx : null; }
-  private async loadBuffer(url: string): Promise<AudioBuffer | null> {
-    try {
-      const ctx = this.ensureCtx(); if (!ctx) return null;
-      if (this.buffers[url]) return this.buffers[url];
-      const resp = await fetch(url);
-      const data = await resp.arrayBuffer();
-      const buf = await ctx.decodeAudioData(data);
-      this.buffers[url] = buf; return buf;
-    } catch { return null; }
-  }
-  private playOsc(freq: number, type: OscillatorType, duration: number, gain: number) {
+  private playOsc(freq: number, type: OscillatorType, duration: number, gain: number, pan = 0) {
     const ctx = this.ensureCtx(); if (!ctx) return;
     const o = ctx.createOscillator();
     const g = ctx.createGain();
+    const p = ctx.createStereoPanner(); p.pan.value = pan;
     o.type = type; o.frequency.setValueAtTime(freq, ctx.currentTime);
     g.gain.setValueAtTime(0, ctx.currentTime);
     g.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-    o.connect(g).connect(ctx.destination);
+    const dest = this.masterGain || ctx.destination;
+    o.connect(g).connect(p).connect(dest);
     o.start(); o.stop(ctx.currentTime + duration);
   }
-  private async playUrl(url: string, gain = 0.2, rate = 1) {
-    const ctx = this.ensureCtx(); if (!ctx) throw new Error('noctx');
-    const buf = await this.loadBuffer(url);
-    if (!buf) throw new Error('nobuf');
-    const src = ctx.createBufferSource();
-    src.buffer = buf; src.playbackRate.value = rate;
-    const g = ctx.createGain(); g.gain.value = gain;
-    src.connect(g).connect(ctx.destination);
-    src.start();
+  private playSweep(from: number, to: number, duration: number, type: OscillatorType, gain: number, pan = 0) {
+    const ctx = this.ensureCtx(); if (!ctx) return;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    const p = ctx.createStereoPanner(); p.pan.value = pan;
+    o.type = type; o.frequency.setValueAtTime(from, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1, to), ctx.currentTime + duration);
+    g.gain.setValueAtTime(0, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+    const dest = this.masterGain || ctx.destination;
+    o.connect(g).connect(p).connect(dest);
+    o.start(); o.stop(ctx.currentTime + duration);
   }
-  async swap() { if (!(await this.try('swap'))) this.playOsc(420, 'triangle', 0.12, 0.08); }
-  async match() { if (!(await this.try('match'))) this.playOsc(720, 'sine', 0.18, 0.12); }
-  async explode() { if (!(await this.try('explode'))) this.playOsc(90, 'sawtooth', 0.35, 0.2); }
-  async drop() { if (!(await this.try('drop'))) this.playOsc(260, 'square', 0.12, 0.06); }
-  private async try(kind: 'swap' | 'match' | 'explode' | 'drop'): Promise<boolean> {
-    if (!this.ensureCtx()) return false;
-    const urls: Record<typeof kind, string> = {
-      swap: 'https://opengameart.org/sites/default/files/button.mp3',
-      match: 'https://opengameart.org/sites/default/files/success.mp3',
-      explode: 'https://opengameart.org/sites/default/files/Chunky%20Explosion.mp3',
-      drop: 'https://opengameart.org/sites/default/files/click_sound_1.mp3'
-    } as any;
-    try { await this.playUrl(urls[kind], kind==='explode'?0.25:0.18, kind==='match'?1.15:1); return true; } catch { return false; }
-  }
+  async swap(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playOsc(420, 'triangle', 0.08, 0.07, pan); }
+  swoosh(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playSweep(900, 220, 0.18, 'sawtooth', 0.06, pan); }
+  async match(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playOsc(720, 'sine', 0.12, 0.1, pan); }
+  async explode(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playOsc(90, 'sawtooth', 0.25, 0.18, pan); }
+  async drop(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playOsc(260, 'square', 0.08, 0.06, pan); }
+  select(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playOsc(560, 'triangle', 0.06, 0.06, pan); }
+  hover(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playOsc(480, 'sine', 0.04, 0.04, pan); }
+  invalid(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playSweep(800, 140, 0.16, 'sawtooth', 0.06, pan); }
+  big(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playSweep(340, 140, 0.28, 'triangle', 0.12, pan); }
+  laser(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playSweep(1800, 260, 0.18, 'sawtooth', 0.06, pan); }
+  score(pos?: {x:number,y:number}) { const pan = this.panFromPos(pos); this.playOsc(880, 'sine', 0.06, 0.05, pan); }
+  private panFromPos(pos?: {x:number,y:number}) { if (!pos) return 0; const w = window.innerWidth || 1; const px = Math.max(0, Math.min(w, pos.x)); return Math.max(-1, Math.min(1, (px / w) * 2 - 1)); }
 }
