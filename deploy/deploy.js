@@ -43,11 +43,14 @@ if (!fs.existsSync(DIST_DIR)) {
 }
 
 if (SSH && SCP) {
+  const scpOpts = [];
+  if (process.platform === 'win32') scpOpts.push('-O');
+  if (process.env.SCP_OPTS) scpOpts.push(...String(process.env.SCP_OPTS).split(/\s+/).filter(Boolean));
   run(SSH, [REMOTE, `mkdir -p '${REMOTE_DIR}'`]);
-  run(SCP, ['-r', `${DIST_DIR}/`, `${REMOTE}:${REMOTE_DIR}/`]);
+  run(SCP, [...scpOpts, '-r', `${DIST_DIR}/`, `${REMOTE}:${REMOTE_DIR}/`]);
 } else if (hasWSL()) {
   const cwd = process.cwd().replace(/\\/g, '/');
-  const cmd = `cd "$(wslpath -a '${cwd}')" && ssh ${REMOTE} "mkdir -p '${REMOTE_DIR}'" && scp -r ${DIST_DIR}/ ${REMOTE}:${REMOTE_DIR}/`;
+  const cmd = `cd \"$(wslpath -a '${cwd}')\" && ssh ${REMOTE} \"mkdir -p '${REMOTE_DIR}'\" && scp -r ${DIST_DIR}/ ${REMOTE}:${REMOTE_DIR}/`;
   run('wsl', ['-e', 'bash', '-lc', cmd]);
 } else {
   console.error('Nenhum método disponível para ssh/scp. Instale OpenSSH ou use WSL.');

@@ -14,10 +14,13 @@ Jogo match‑3 sci‑fi construído com `TypeScript`, `Vite` e `Pixi.js`. Troque
 - Build: `npm run build`
 
 ## Deploy
-- Script: `npm run deploy` (executa `bash deploy/deploy.sh`)
+- Comando: `npm run deploy` (executa `node deploy/deploy.js`)
 - Padrão: publica `dist/` via `scp` para `debian@fbmac.net:/home/debian/quantum-matrix/`
-- Variáveis:
-  - `REMOTE_DIR`: sobrescreve diretório remoto. Ex.: `REMOTE_DIR=/var/www/quantum-matrix npm run deploy`
+- Variáveis de ambiente:
+  - `REMOTE`: usuário/host remoto. Ex.: `REMOTE=debian@fbmac.net npm run deploy`
+  - `REMOTE_DIR`: diretório remoto. Ex.: `REMOTE_DIR=/var/www/quantum-matrix npm run deploy`
+  - `SSH_BIN`/`SCP_BIN`: caminho explícito dos binários em Windows (opcional). Ex.: `SCP_BIN="C:\\Windows\\System32\\OpenSSH\\scp.exe"`
+- Windows: requer OpenSSH Client no PATH (ou Git for Windows). Se ausente, o script tenta fallback via WSL.
 
 ## Estrutura
 - `index.html`: container do jogo, inclui `src/main.ts`, metas e favicons
@@ -32,5 +35,6 @@ Jogo match‑3 sci‑fi construído com `TypeScript`, `Vite` e `Pixi.js`. Troque
 
 ## Observações
 - Favicons: gerados por `tools/gen-favicon.js` e servidos via `public/` (`index.html:34`, `index.html:41`).
-- `vite preview` serve a build estática em produção; para Nginx/Apache, basta apontar o root para `dist/` e omitir o service.
-- Portas/host podem ser ajustados em `deploy/systemd/quantum-matrix.service`.
+- Imagens: `src/assets.ts` usa `new URL(..., import.meta.url).href` para incluir PNGs na build; os arquivos ficam em `dist/assets/`.
+- Sons: gerados por síntese via Web Audio API; não há arquivos de áudio no deploy.
+- Serviço: `vite preview` serve a build estática; para Nginx/Apache, aponte o root para `dist/` e omita o service. Portas/host configuráveis em `deploy/systemd/quantum-matrix.service`.
