@@ -19,15 +19,6 @@ Jogo match‑3 sci‑fi construído com `TypeScript`, `Vite` e `Pixi.js`. Troque
 - Variáveis:
   - `REMOTE_DIR`: sobrescreve diretório remoto. Ex.: `REMOTE_DIR=/var/www/quantum-matrix npm run deploy`
 
-### Serviço systemd
-- Unidade: `deploy/systemd/quantum-matrix.service`
-- Execução: `npm run preview -- --host 0.0.0.0 --port 8080`
-- Instalação no servidor:
-  - `scp deploy/systemd/quantum-matrix.service debian@fbmac.net:/tmp/quantum-matrix.service`
-  - `sudo mv /tmp/quantum-matrix.service /etc/systemd/system/quantum-matrix.service`
-  - `sudo systemctl daemon-reload`
-  - `sudo systemctl enable --now quantum-matrix.service`
-
 ## Estrutura
 - `index.html`: container do jogo, inclui `src/main.ts`, metas e favicons
 - `public/`: favicons e assets estáticos copiados para `dist/`
