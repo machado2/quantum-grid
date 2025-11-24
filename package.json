@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "gen:favicon": "node tools/gen-favicon.js"
+    "gen:favicon": "node tools/gen-favicon.js",
+    "deploy": "bash deploy/deploy.sh"
   },
   "dependencies": {
     "pixi.js": "^7.4.2"

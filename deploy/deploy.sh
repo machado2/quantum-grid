@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REMOTE="debian@fbmac.net"
-REMOTE_DIR="${REMOTE_DIR:-/home/debian/apps/trae}"
+REMOTE_DIR="${REMOTE_DIR:-/home/debian/quantum-matrix}"
 DIST_DIR="dist"
 
 if ! command -v scp >/dev/null 2>&1; then
@@ -15,4 +15,3 @@ npm run build
 
 ssh "$REMOTE" "mkdir -p '$REMOTE_DIR'"
 scp -r "$DIST_DIR/" "$REMOTE:$REMOTE_DIR/"
-

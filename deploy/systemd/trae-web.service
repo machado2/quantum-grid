@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=debian
 Group=debian
-WorkingDirectory=/home/debian/apps/trae
+WorkingDirectory=/home/debian/quantum-matrix
 Environment=NODE_ENV=production
 ExecStart=/usr/bin/npm run preview -- --host 0.0.0.0 --port 8080
 Restart=on-failure
@@ -15,4 +15,3 @@ TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target
-
