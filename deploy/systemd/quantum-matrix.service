@@ -1,5 +1,5 @@
 [Unit]
-Description=Trae Web Service
+Description=Quantum Matrix Web Service
 After=network.target
 
 [Service]
